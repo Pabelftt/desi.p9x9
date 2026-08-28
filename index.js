@@ -219,24 +219,20 @@ app.post('/api/webs-p9x9-data', async (req, res) => {
   try {
     const body = req.body || {};
 
-    if (!body.title) {
+    const title = String(body.title || "").trim();
+    if (!title) {
       return res.status(400).json({ success: false, message: "title is required" });
     }
 
-    const title = String(body.title).trim();
-
-    let routeName = (body.routeName || "").toLowerCase().trim();
+    let routeName = String(body.routeName || "").toLowerCase().trim();
     if (!routeName) {
       routeName = title.toLowerCase().replace(/[^\w\s]/g, "").trim().replace(/\s+/g, "-");
     }
 
+    // desi.p9x9.com এ শুধু প্রয়োজনীয় কয়েকটি field রাখা হলো
     const hadding = title;
-    const img = body.imageLink || body.img || "";
-    const play = body.videoLink || body.video || body.play || "";
-
-    if (!play) {
-      return res.status(400).json({ success: false, message: "videoLink is required" });
-    }
+    const img = String(body.imageLink || body.img || "").trim();
+    const play = String(body.videoLink || body.video || body.play || "").trim();
 
     // Movie-এ id হলো unique key (upsert)
     const existing = await Movie.findOne({ id: routeName });
