@@ -214,6 +214,53 @@ app.get('/test', (req, res) => {
   res.send(`Custom add`);
 });
 
+// ================= Receive data from webs.p9x9.com (scraper-api) =================
+app.post('/api/webs-p9x9-data', async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    if (!body.title) {
+      return res.status(400).json({ success: false, message: "title is required" });
+    }
+
+    const title = String(body.title).trim();
+
+    let routeName = (body.routeName || "").toLowerCase().trim();
+    if (!routeName) {
+      routeName = title.toLowerCase().replace(/[^\w\s]/g, "").trim().replace(/\s+/g, "-");
+    }
+
+    const hadding = title;
+    const img = body.imageLink || body.img || "";
+    const play = body.videoLink || body.video || body.play || "";
+
+    if (!play) {
+      return res.status(400).json({ success: false, message: "videoLink is required" });
+    }
+
+    // Movie-এ id হলো unique key (upsert)
+    const existing = await Movie.findOne({ id: routeName });
+    if (existing) {
+      existing.hadding = hadding;
+      existing.img = img;
+      existing.play = play;
+      await existing.save();
+    } else {
+      await Movie.create({ id: routeName, hadding, img, play });
+    }
+
+    res.json({
+      success: true,
+      apiSuccess: true,
+      message: "Data saved successfully",
+      routeName
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
+});
+
 
 // ===============================
 // ✅ Dynamic XML Sitemap (Daily Updated)
