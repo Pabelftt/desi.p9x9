@@ -26,8 +26,6 @@
   <!-- Preconnects -->
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://i.postimg.cc">
-  <link rel="preconnect" href="https://welcomingexpulsion.com">
-
   <!-- OG -->
   <meta property="og:title" content="<%= hadding %>">
   <meta property="og:description" content="<%= description %>">
@@ -53,13 +51,17 @@
     /* ====== Base ====== */
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html, body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
       min-height: 100vh;
-      overflow-x: clip;
       transition: background 0.35s, color 0.35s;
     }
 
@@ -140,27 +142,39 @@
     .latest-title i { color: var(--accent-2); }
 
     .latest-grid {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, 320px);
+      justify-content: center;
       gap: 14px;
     }
 
     .latest-grid a {
       display: flex;
-      align-items: center;
-      gap: 12px;
+      flex-direction: column;
+      width: 320px;
+      overflow: hidden;
       background: var(--card-grad);
       border: 1px solid var(--border);
-      padding: 12px 20px;
-      border-radius: 14px;
+      border-radius: 16px;
       color: var(--text);
       font-weight: 600;
       font-size: 15px;
       text-decoration: none;
-      min-width: 280px;
-      flex: 1 1 280px;
-      max-width: 430px;
       transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.35s, border-color 0.35s;
+    }
+
+    .latest-grid a img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .latest-card-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px 16px;
     }
 
     .latest-grid a:hover {
@@ -185,10 +199,10 @@
     /* ====== Movie grid ====== */
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 28px;
+      grid-template-columns: repeat(auto-fill, 300px);
+      justify-content: center;
+      gap: 24px;
       padding: 40px 30px 10px;
-      max-width: 1400px;
       margin: 0 auto;
     }
 
@@ -204,7 +218,6 @@
       box-shadow: var(--shadow);
       display: flex;
       flex-direction: column;
-      height: 100%;
     }
 
     .card::before {
@@ -221,11 +234,10 @@
 
     .card img {
       width: 100%;
+      height: auto;
       display: block;
-      aspect-ratio: 3 / 4;
-      object-fit: cover;
       filter: brightness(0.92);
-      transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.6s;
+      transition: filter 0.6s;
       border-bottom: 1px solid var(--border);
     }
 
@@ -255,13 +267,13 @@
     }
 
     .card:hover {
-      transform: translateY(-12px) scale(1.03);
+      transform: translateY(-12px);
       box-shadow: 0 24px 45px var(--shadow), 0 0 30px rgba(77, 163, 255, 0.25);
       border-color: rgba(77, 163, 255, 0.5);
     }
 
     .card:hover::before { opacity: 1; }
-    .card:hover img { transform: scale(1.12); filter: brightness(1.1); }
+    .card:hover img { filter: brightness(1.1); }
     .card:hover h3 { color: var(--accent); transform: translateY(-5px); }
     .card:hover::after { transform: scaleX(1); }
 
@@ -300,22 +312,22 @@
 
     /* ====== Responsive ====== */
     @media (max-width: 1024px) {
-      .grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px; padding: 32px 24px 8px; }
+      .grid { gap: 20px; padding: 32px 20px 8px; }
     }
 
     @media (max-width: 768px) {
-      .grid { grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 26px 16px 6px; }
+      .grid { grid-template-columns: 300px; gap: 16px; padding: 26px 10px 6px; }
       .card h3 { font-size: 15px; padding: 14px 12px; }
       .search-result { font-size: 16px; padding: 14px 18px; }
       .latest { padding: 0 16px; margin-top: 26px; }
     }
 
     @media (max-width: 480px) {
-      .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 22px 14px 4px; }
+      .grid { grid-template-columns: 300px; gap: 12px; padding: 22px 10px 4px; }
       .card h3 { font-size: 13px; padding: 10px 8px; }
       .card .rating { font-size: 11px; padding: 4px 7px; top: 8px; right: 8px; }
-      .card img { aspect-ratio: 3 / 4; }
-      .latest-grid a { min-width: 100%; font-size: 14px; padding: 11px 16px; }
+      .latest-grid { grid-template-columns: 320px; }
+      .latest-grid a { font-size: 14px; }
       .search-result { font-size: 15px; }
     }
   </style>
@@ -338,7 +350,10 @@
   <div class="latest-title"><i class="fa-solid fa-fire" aria-hidden="true"></i> Latest Additions</div>
   <div class="latest-grid">
     <% latest.forEach(item => { %>
-      <a href="/movie/<%= item.id %>"><i class="fa-solid fa-play" aria-hidden="true"></i> <%= item.hadding %></a>
+      <a class="latest-card" href="/movie/<%= item.id %>">
+        <img src="<%= item.img %>" loading="lazy" decoding="async" alt="<%= item.hadding %>">
+        <span class="latest-card-title"><i class="fa-solid fa-play" aria-hidden="true"></i> <%= item.hadding %></span>
+      </a>
     <% }) %>
   </div>
 </div>
@@ -349,8 +364,6 @@
       <div class="rating"><i class="fa-solid fa-star" aria-hidden="true"></i><%= (Math.random() * 2 + 8).toFixed(1) %></div>
       <img
         src="<%= movie.img %>"
-        width="300"
-        height="400"
         loading="<%= idx === 0 ? 'eager' : 'lazy' %>"
         <% if (idx === 0) { %>fetchpriority="high"<% } %>
         decoding="async"
@@ -364,6 +377,5 @@
   <i class="fa-solid fa-copyright" aria-hidden="true"></i> 2026 Movie Collection. All rights reserved.
 </footer>
 
-  <%- include("Ads") %>
 </body>
 </html>

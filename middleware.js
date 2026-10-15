@@ -6,11 +6,12 @@ module.exports = function(req, res, next) {
   res.locals.author = "Pabel Islan";
   res.locals.movieName = "Viral Link";
   res.locals.img = "https://i.postimg.cc/KzKbCSqs/1768441412180.png";
-  res.locals.description = "ভিডিও তে ক্লিক করার পর অন্য কোনো জায়গায় নিয়ে গেলে ফিরে আসে আবার ক্লিক করলে ভিডিও চলবে";
+  res.locals.description = "প্রথমবার ভিডিও চালাতে Continue চাপলে নির্ধারিত smart link-এ যাবেন।";
   res.locals.moreWebsite = "https://p9x9.com";
-  res.locals.telegramLink = "https://chat.p9x9.com";
+  res.locals.telegramLink = (process.env.TELEGRAM_URL || "https://telegram.p9x9.com/telegram").trim();
+  res.locals.downloadLink = (process.env.DOWNLOAD_LINK_URL || "https://auctionr.org/4/93a942816b667574bfb9c03daa56b8c0").trim();
   res.locals.keywords = "Bangla Sex Video, Bangladeshi Sex Video, Viral Link, Tiktoker Viral Link, Bhabi Sex, Vabi Sex";
-  res.locals.smartLink = "https://superioroptionaleveryone.com/n7zjq0qcp?key=f4ce1616a0dbd6e606504b1fa58b7fb1";
+  res.locals.smartLink = (process.env.SMART_LINK_URL || "").trim();
 
   next();
 };

@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const ejs = require('ejs');
 const cors = require('cors');
@@ -30,6 +32,21 @@ const countSchema = new mongoose.Schema({ random: Number, count: Number });
 const CountModel = mongoose.model('CountModel', countSchema);
 
 // ================= Utility =================
+function hasSmartLinkFlowCookie(req, videoId) {
+  const cookie = (req.headers.cookie || "")
+    .split(";")
+    .map(part => part.trim())
+    .find(part => part.startsWith("smartLinkFlow="));
+  if (!cookie) return false;
+
+  try {
+    const flow = JSON.parse(decodeURIComponent(cookie.slice("smartLinkFlow=".length)));
+    return flow.videoId === videoId && flow.pagePath === `/movie/${encodeURIComponent(videoId)}`;
+  } catch (error) {
+    return false;
+  }
+}
+
 async function getCountDoc() {
   const doc = await CountModel.findOne();
   return {
@@ -58,7 +75,7 @@ app.get('/', async (req, res) => {
       }
     }
 
-    const latest = await Movie.find({}).sort({ _id: -1 }).limit(5).select("id hadding");
+    const latest = await Movie.find({}).sort({ _id: -1 }).limit(5).select("id hadding img");
     const { randomData, randomCount } = await getCountDoc();
 
     res.render('index', {
@@ -97,11 +114,46 @@ app.get('/movie/:id', async (req, res) => {
       date,
       query: "",
       randomData,
-      randomCount
+      randomCount,
+      smartLinkFlowCompleted: hasSmartLinkFlowCookie(req, id)
     });
   } catch (err) {
     console.error(err);
     res.status(500).send("Server error");
+  }
+});
+
+app.post('/api/movies/:id/smart-link', async (req, res) => {
+  try {
+    const videoId = req.params.id;
+    const movieExists = await Movie.exists({ id: videoId });
+    if (!movieExists) return res.status(404).json({ error: "Video not found" });
+
+    if (!res.locals.smartLink) return res.json({ redirectUrl: null });
+
+    let redirectUrl;
+    try {
+      redirectUrl = new URL(res.locals.smartLink);
+      if (redirectUrl.protocol !== "https:" && redirectUrl.protocol !== "http:") {
+        return res.status(500).json({ error: "Smart link must use HTTP or HTTPS" });
+      }
+    } catch (error) {
+      console.error("Invalid smart link URL:", error);
+      return res.status(500).json({ error: "Smart link is invalid" });
+    }
+
+    const pagePath = `/movie/${encodeURIComponent(videoId)}`;
+    res.cookie("smartLinkFlow", JSON.stringify({ videoId, pagePath }), {
+      maxAge: 300000,
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production"
+    });
+    res.json({ redirectUrl: redirectUrl.href });
+  } catch (err) {
+    console.error("Unable to create smart link flow:", err);
+    res.status(500).json({ error: "Unable to continue to smart link" });
   }
 });
 
