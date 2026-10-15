@@ -18,7 +18,10 @@ app.set('view engine', 'ejs');
 app.use(express.static('public'));
 
 // ================= MongoDB =================
-const MONGO_URI = 'mongodb+srv://MyDatabase:Cp8rNCfi15IUC6uc@cluster0.kjbloky.mongodb.net/adultLink';
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  throw new Error('MONGO_URI must be set in the environment');
+}
 mongoose.connect(MONGO_URI)
   .then(() => console.log('✅ MongoDB Connected'))
   .catch(err => console.error('❌ MongoDB Connection Error:', err));
