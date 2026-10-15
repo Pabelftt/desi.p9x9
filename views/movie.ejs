@@ -552,7 +552,11 @@
 <div class="wrap suggest-wrap">
   <h2 class="section-title"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Suggested Videos</h2>
 
-  <div class="suggest-grid" id="suggestGrid">
+  <div
+    class="suggest-grid"
+    id="suggestGrid"
+    data-skip="<%= suggested.length %>"
+    data-has-more="<%= hasMoreSuggested %>">
     <% suggested.forEach(item => { %>
       <a href="/movie/<%= item.id %>" class="s-card">
         <div class="rating"><i class="fa-solid fa-star" aria-hidden="true"></i><%= (Math.random() * 2 + 8).toFixed(1) %></div>
@@ -562,10 +566,11 @@
     <% }) %>
   </div>
 
-  <button id="loadMore" class="load-btn" aria-live="polite">
+  <button id="loadMore" class="load-btn" type="button" <%= hasMoreSuggested ? '' : 'hidden' %>>
     <span>See More</span>
     <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
   </button>
+  <p id="suggestedLoadStatus" role="status" aria-live="polite"></p>
 
   <div class="otherWebsite">
     <h2 class="section-title" style="justify-content:center"><i class="fa-solid fa-globe" aria-hidden="true"></i> Other Website</h2>
@@ -725,47 +730,75 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-// ===== Load more suggestions =====
-var skip = 8;
-var excludeId = "<%= data.id %>";
+// ===== Infinite scroll suggestions =====
 var grid = document.getElementById("suggestGrid");
 var btn = document.getElementById("loadMore");
+var status = document.getElementById("suggestedLoadStatus");
+var skip = Number(grid.dataset.skip);
+var excludeId = <%- JSON.stringify(data.id) %>;
+var hasMoreSuggested = grid.dataset.hasMore === 'true';
+var isLoadingSuggested = false;
+var suggestedObserver;
 
-btn.addEventListener("click", async () => {
-  btn.innerHTML = '<span>Loading...</span><i class="fa-solid fa-spinner fa-spin"></i>';
+function appendSuggested(item) {
+  var a = document.createElement("a");
+  a.href = '/movie/' + encodeURIComponent(item.id);
+  a.className = 's-card';
+
+  var rating = document.createElement('div');
+  rating.className = 'rating';
+  rating.innerHTML = '<i class="fa-solid fa-star" aria-hidden="true"></i>' + (Math.random() * 2 + 8).toFixed(1);
+
+  var image = document.createElement('img');
+  image.src = item.img;
+  image.loading = 'lazy';
+  image.decoding = 'async';
+  image.alt = item.hadding;
+
+  var title = document.createElement('p');
+  title.textContent = item.hadding;
+  a.append(rating, image, title);
+  grid.appendChild(a);
+}
+
+async function loadMoreSuggested() {
+  if (isLoadingSuggested || !hasMoreSuggested) return;
+  isLoadingSuggested = true;
   btn.disabled = true;
+  btn.innerHTML = '<span>Loading...</span><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+  status.textContent = '';
 
   try {
-    var res = await fetch('/api/suggested?excludeId=' + excludeId + '&skip=' + skip);
-    var data = await res.json();
+    var params = new URLSearchParams({ excludeId: excludeId, skip: String(skip) });
+    var res = await fetch('/api/suggested?' + params.toString());
+    if (!res.ok) throw new Error('Suggested videos request failed: ' + res.status);
+    var result = await res.json();
 
-    if (!data.length) {
-      btn.innerHTML = '<span>No more videos</span>';
-      btn.disabled = true;
-      return;
-    }
-
-    data.forEach(function (item) {
-      var rating = (Math.random() * 2 + 8).toFixed(1);
-      var a = document.createElement("a");
-      a.href = '/movie/' + item.id;
-      a.className = 's-card';
-      a.innerHTML =
-        '<div class="rating"><i class="fa-solid fa-star" aria-hidden="true"></i>' + rating + '</div>' +
-        '<img src="' + item.img + '" loading="lazy" decoding="async" alt="' + item.hadding + '">' +
-        '<p>' + item.hadding + '</p>';
-      grid.appendChild(a);
-    });
-
-    skip += 8;
+    result.movies.forEach(appendSuggested);
+    skip += result.movies.length;
+    hasMoreSuggested = result.hasMore;
+    grid.dataset.skip = String(skip);
+    grid.dataset.hasMore = String(hasMoreSuggested);
+    btn.hidden = !hasMoreSuggested;
     btn.innerHTML = '<span>See More</span><i class="fa-solid fa-chevron-down"></i>';
-    btn.disabled = false;
   } catch (error) {
     console.error("Error loading suggestions:", error);
     btn.innerHTML = '<span>Error loading. Try again</span>';
+    status.textContent = 'Suggested videos could not be loaded. Please try again.';
+    if (suggestedObserver) suggestedObserver.unobserve(btn);
+  } finally {
+    isLoadingSuggested = false;
     btn.disabled = false;
   }
-});
+}
+
+btn.addEventListener('click', loadMoreSuggested);
+if ('IntersectionObserver' in window && hasMoreSuggested) {
+  suggestedObserver = new IntersectionObserver(function(entries) {
+    if (entries.some(function(entry) { return entry.isIntersecting; })) loadMoreSuggested();
+  }, { rootMargin: '600px 0px' });
+  suggestedObserver.observe(btn);
+}
 </script>
 
 </body>

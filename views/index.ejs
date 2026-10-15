@@ -206,6 +206,34 @@
       margin: 0 auto;
     }
 
+    .infinite-load {
+      width: min(340px, calc(100% - 32px));
+      margin: 22px auto 0;
+      text-align: center;
+    }
+
+    .load-btn {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px 20px;
+      border: 0;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #1a6bff 0%, #123a8f 100%);
+      box-shadow: 0 8px 22px rgba(26, 107, 255, 0.25);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .load-btn:hover { filter: brightness(1.1); }
+    .load-btn:disabled { cursor: wait; opacity: 0.7; }
+    .load-btn[hidden] { display: none; }
+    #movieLoadStatus { min-height: 1.5em; color: var(--text-2); }
+
     .card {
       position: relative;
       overflow: hidden;
@@ -358,7 +386,12 @@
   </div>
 </div>
 
-<div class="grid">
+<div
+  class="grid"
+  id="movieGrid"
+  data-query="<%= query %>"
+  data-skip="<%= data.length %>"
+  data-has-more="<%= hasMore %>">
   <% data.forEach((movie, idx) => { %>
     <a href="/movie/<%= movie.id %>" class="card">
       <div class="rating"><i class="fa-solid fa-star" aria-hidden="true"></i><%= (Math.random() * 2 + 8).toFixed(1) %></div>
@@ -373,9 +406,91 @@
   <% }) %>
 </div>
 
+<div class="infinite-load">
+  <button id="loadMoreMovies" class="load-btn" type="button" <%= hasMore ? '' : 'hidden' %>>
+    <span>Load more videos</span>
+    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+  </button>
+  <p id="movieLoadStatus" role="status" aria-live="polite"></p>
+</div>
+
 <footer>
   <i class="fa-solid fa-copyright" aria-hidden="true"></i> 2026 Movie Collection. All rights reserved.
 </footer>
+
+<script>
+(function() {
+  var grid = document.getElementById('movieGrid');
+  var button = document.getElementById('loadMoreMovies');
+  var status = document.getElementById('movieLoadStatus');
+  var skip = Number(grid.dataset.skip);
+  var query = grid.dataset.query;
+  var hasMore = grid.dataset.hasMore === 'true';
+  var loading = false;
+  var observer;
+
+  function appendMovie(movie) {
+    var card = document.createElement('a');
+    card.href = '/movie/' + encodeURIComponent(movie.id);
+    card.className = 'card';
+
+    var rating = document.createElement('div');
+    rating.className = 'rating';
+    rating.innerHTML = '<i class="fa-solid fa-star" aria-hidden="true"></i>' + (Math.random() * 2 + 8).toFixed(1);
+
+    var image = document.createElement('img');
+    image.src = movie.img;
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    image.alt = movie.hadding;
+
+    var title = document.createElement('h3');
+    title.textContent = movie.hadding;
+    card.append(rating, image, title);
+    grid.appendChild(card);
+  }
+
+  async function loadNextPage() {
+    if (loading || !hasMore) return;
+    loading = true;
+    button.disabled = true;
+    button.innerHTML = '<span>Loading...</span><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+    status.textContent = '';
+
+    try {
+      var params = new URLSearchParams({ skip: String(skip) });
+      if (query) params.set('q', query);
+      var response = await fetch('/api/movies?' + params.toString());
+      if (!response.ok) throw new Error('Movie request failed: ' + response.status);
+      var result = await response.json();
+
+      result.movies.forEach(appendMovie);
+      skip += result.movies.length;
+      hasMore = result.hasMore;
+      grid.dataset.skip = String(skip);
+      grid.dataset.hasMore = String(hasMore);
+      button.hidden = !hasMore;
+      button.innerHTML = '<span>Load more videos</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
+    } catch (error) {
+      console.error('Error loading videos:', error);
+      button.innerHTML = '<span>Could not load. Try again</span>';
+      status.textContent = 'Videos could not be loaded. Please try again.';
+      if (observer) observer.unobserve(button);
+    } finally {
+      loading = false;
+      button.disabled = false;
+    }
+  }
+
+  button.addEventListener('click', loadNextPage);
+  if ('IntersectionObserver' in window && hasMore) {
+    observer = new IntersectionObserver(function(entries) {
+      if (entries.some(function(entry) { return entry.isIntersecting; })) loadNextPage();
+    }, { rootMargin: '600px 0px' });
+    observer.observe(button);
+  }
+})();
+</script>
 
 </body>
 </html>

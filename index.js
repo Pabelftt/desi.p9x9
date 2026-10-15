@@ -15,7 +15,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.set('view engine', 'ejs');
-app.use(express.static('public'));
+app.use(express.static('public', {
+  maxAge: 600000,
+  etag: true,
+  lastModified: true
+}));
 
 // ================= MongoDB =================
 const MONGO_URI = process.env.MONGO_URI;
@@ -33,6 +37,13 @@ const Movie = mongoose.model('Movie', movieSchema);
 
 const countSchema = new mongoose.Schema({ random: Number, count: Number });
 const CountModel = mongoose.model('CountModel', countSchema);
+const MOVIE_PAGE_SIZE = 20;
+const BROWSER_CACHE_MAX_AGE_SECONDS = 600;
+
+function setBrowserCacheHeaders(res, varyByCookie = false) {
+  res.set('Cache-Control', `private, max-age=${BROWSER_CACHE_MAX_AGE_SECONDS}`);
+  if (varyByCookie) res.vary('Cookie');
+}
 
 // ================= Utility =================
 function hasSmartLinkFlowCookie(req, videoId) {
@@ -58,20 +69,33 @@ async function getCountDoc() {
   };
 }
 
+async function getMoviePage(query, skip = 0) {
+  if (query) {
+    const textFilter = { $text: { $search: query } };
+    const hasTextMatches = await Movie.exists(textFilter);
+    const filter = hasTextMatches
+      ? textFilter
+      : { hadding: { $regex: query.split(" ")[0], $options: "i" } };
+    let request = Movie.find(filter);
+    if (hasTextMatches) request = request.select({ score: { $meta: "textScore" } }).sort({ score: { $meta: "textScore" } });
+    else request = request.sort({ _id: -1 });
+    return request.skip(skip).limit(MOVIE_PAGE_SIZE + 1);
+  }
+
+  return Movie.find({})
+    .sort({ _id: -1 })
+    .skip(skip)
+    .limit(MOVIE_PAGE_SIZE + 1);
+}
+
 // ================= ROUTES =================
 app.get('/', async (req, res) => {
   try {
-    const query = req.query.q || "";
-    let data;
-
-    if (query) {
-      data = await Movie.find({ $text: { $search: query } }, { score: { $meta: "textScore" } })
-        .sort({ score: { $meta: "textScore" } });
-      if (!data.length) {
-        data = await Movie.find({ hadding: { $regex: query.split(" ")[0], $options: "i" } });
-      }
-    } else {
-      data = await Movie.find({});
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    let data = await getMoviePage(query);
+    const hasMore = data.length > MOVIE_PAGE_SIZE;
+    data = data.slice(0, MOVIE_PAGE_SIZE);
+    if (!query) {
       for (let i = data.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [data[i], data[j]] = [data[j], data[i]];
@@ -81,10 +105,12 @@ app.get('/', async (req, res) => {
     const latest = await Movie.find({}).sort({ _id: -1 }).limit(5).select("id hadding img");
     const { randomData, randomCount } = await getCountDoc();
 
+    setBrowserCacheHeaders(res, true);
     res.render('index', {
       data,
       latest,
       query,
+      hasMore,
       randomData,
       randomCount
     });
@@ -101,19 +127,22 @@ app.get('/movie/:id', async (req, res) => {
     const data = await Movie.findOne({ id });
     if (!data) return res.status(404).send("Not found");
 
-    const suggested = await Movie.aggregate([
-      { $match: { id: { $ne: id } } },
-      { $sample: { size: 8 } }
-    ]);
+    const suggested = await Movie.find({ id: { $ne: id } })
+      .sort({ _id: -1 })
+      .limit(MOVIE_PAGE_SIZE + 1);
+    const hasMoreSuggested = suggested.length > MOVIE_PAGE_SIZE;
+    const suggestedPage = suggested.slice(0, MOVIE_PAGE_SIZE);
 
     const dateArray = ["2025-11-22","2025-11-23","2025-11-24","2025-10-22","2025-11-20"];
     const date = dateArray[(parseInt(id) - 1) % dateArray.length];
 
     const { randomData, randomCount } = await getCountDoc();
 
+    setBrowserCacheHeaders(res, true);
     res.render('movie', {
       data,
-      suggested,
+      suggested: suggestedPage,
+      hasMoreSuggested,
       date,
       query: "",
       randomData,
@@ -166,17 +195,46 @@ app.post('/api/movies/:id/smart-link', async (req, res) => {
 
 app.get('/api/suggested', async (req, res) => {
   try {
-    const { excludeId, skip = 0 } = req.query;
+    const excludeId = typeof req.query.excludeId === "string" ? req.query.excludeId : "";
+    const skip = Number.parseInt(req.query.skip, 10);
+    if (!Number.isInteger(skip) || skip < 0) {
+      return res.status(400).json({ error: "skip must be a non-negative integer" });
+    }
 
-    const videos = await Movie.aggregate([
-      { $match: { id: { $ne: excludeId } } },
-      { $skip: parseInt(skip) },
-      { $limit: 8 }
-    ]);
+    const videos = await Movie.find({ id: { $ne: excludeId } })
+      .sort({ _id: -1 })
+      .skip(skip)
+      .limit(MOVIE_PAGE_SIZE + 1);
 
-    res.json(videos);
+    setBrowserCacheHeaders(res);
+    res.json({
+      movies: videos.slice(0, MOVIE_PAGE_SIZE),
+      hasMore: videos.length > MOVIE_PAGE_SIZE
+    });
 
   } catch (err) {
+    console.error("Error loading suggested videos:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get('/api/movies', async (req, res) => {
+  try {
+    const skip = Number.parseInt(req.query.skip, 10);
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!Number.isInteger(skip) || skip < 0) {
+      return res.status(400).json({ error: "skip must be a non-negative integer" });
+    }
+
+    const movies = await getMoviePage(query, skip);
+
+    setBrowserCacheHeaders(res);
+    res.json({
+      movies: movies.slice(0, MOVIE_PAGE_SIZE),
+      hasMore: movies.length > MOVIE_PAGE_SIZE
+    });
+  } catch (err) {
+    console.error("Error loading movies:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
