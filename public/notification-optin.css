@@ -1,0 +1,90 @@
+.desi-notification-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 5, 10, 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.desi-notification-dialog {
+  position: relative;
+  width: min(100%, 440px);
+  padding: 36px 30px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  background: #171923;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62);
+  color: #f7f7fb;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  text-align: center;
+}
+
+.desi-notification-icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  place-items: center;
+  border: 1px solid rgba(255, 45, 85, 0.32);
+  border-radius: 20px;
+  background: rgba(255, 45, 85, 0.14);
+  color: #ff718a;
+  font-size: 1.55rem;
+}
+
+.desi-notification-dialog h2 {
+  margin: 0 20px 10px;
+  font-size: 1.45rem;
+}
+
+.desi-notification-message {
+  margin: 0 auto 24px;
+  color: #b7b8c8;
+  font-size: 0.94rem;
+  line-height: 1.6;
+}
+
+.desi-notification-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.desi-notification-actions button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.desi-notification-enable {
+  background: linear-gradient(135deg, #ff2d55, #c81959);
+  color: #fff;
+}
+
+.desi-notification-enable:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.desi-notification-dismiss {
+  background: transparent;
+  color: #b7b8c8;
+}
+
+.desi-notification-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: #b7b8c8;
+  font-size: 1.6rem;
+  cursor: pointer;
+}

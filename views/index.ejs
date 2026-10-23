@@ -492,8 +492,6 @@
 })();
 </script>
 
-<% if (socialBarScriptUrl) { %>
-<script data-cfasync="false" src="<%= socialBarScriptUrl %>"></script>
-<% } %>
+<%- include('partials/site-features') %>
 </body>
 </html>

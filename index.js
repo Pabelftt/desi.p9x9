@@ -6,8 +6,20 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const setUrlMiddleware = require('./middleware');
 const axios = require('axios');
+const crypto = require('node:crypto');
+const webpush = require('web-push');
+const PushSubscription = require('./models/PushSubscription');
+const SiteAdSettings = require('./models/SiteAdSettings');
+const {
+  clearSessionCookie,
+  createToken,
+  isAdmin,
+  safeEqual,
+  setSessionCookie
+} = require('./lib/adminAuth');
 
 const app = express();
+const requestLimits = new Map();
 
 // ================= MIDDLEWARE =================
 app.use(setUrlMiddleware); // safe
@@ -39,6 +51,77 @@ const countSchema = new mongoose.Schema({ random: Number, count: Number });
 const CountModel = mongoose.model('CountModel', countSchema);
 const MOVIE_PAGE_SIZE = 20;
 const BROWSER_CACHE_MAX_AGE_SECONDS = 600;
+const DEFAULT_AD_SETTINGS = { popunder: true, socialBar: true, videoRedirect: true };
+
+function rateLimit(key, windowMs, maximum) {
+  const now = Date.now();
+  const current = requestLimits.get(key);
+  if (!current || current.resetAt <= now) {
+    requestLimits.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (current.count >= maximum) return false;
+  current.count += 1;
+  return true;
+}
+
+function currentAdSettings(settings) {
+  return settings
+    ? {
+        popunder: settings.popunder,
+        socialBar: settings.socialBar,
+        videoRedirect: settings.videoRedirect ?? DEFAULT_AD_SETTINGS.videoRedirect,
+        popunderSrc: process.env.POPUNDER_SCRIPT_URL || '',
+        socialBarSrc: process.env.SOCIAL_BAR_SCRIPT_URL || ''
+      }
+    : {
+        ...DEFAULT_AD_SETTINGS,
+        popunderSrc: process.env.POPUNDER_SCRIPT_URL || '',
+        socialBarSrc: process.env.SOCIAL_BAR_SCRIPT_URL || ''
+      };
+}
+
+function configuredVapidKeys() {
+  const publicKey = process.env.NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY || '';
+  const privateKey = process.env.WEB_PUSH_PRIVATE_KEY || '';
+  const contactEmail = process.env.WEB_PUSH_CONTACT_EMAIL || '';
+  try {
+    const publicBytes = Buffer.from(publicKey, 'base64url');
+    const privateBytes = Buffer.from(privateKey, 'base64url');
+    if (
+      !/^[A-Za-z0-9_-]+$/.test(publicKey) ||
+      !/^[A-Za-z0-9_-]+$/.test(privateKey) ||
+      publicBytes.length !== 65 ||
+      publicBytes[0] !== 4 ||
+      privateBytes.length !== 32 ||
+      !contactEmail.includes('@')
+    ) return null;
+
+    const ecdh = crypto.createECDH('prime256v1');
+    ecdh.setPrivateKey(privateBytes);
+    if (!ecdh.getPublicKey(null, 'uncompressed').equals(publicBytes)) return null;
+    return { publicKey, privateKey, contactEmail };
+  } catch {
+    return null;
+  }
+}
+
+function validPushKey(value, expectedLength) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value)) return false;
+  try {
+    return Buffer.from(value, 'base64url').length === expectedLength;
+  } catch {
+    return false;
+  }
+}
+
+function requireAdmin(req, res) {
+  if (!isAdmin(req)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
 
 function setBrowserCacheHeaders(res, varyByCookie = false) {
   res.set('Cache-Control', `private, max-age=${BROWSER_CACHE_MAX_AGE_SECONDS}`);
@@ -89,6 +172,322 @@ async function getMoviePage(query, skip = 0) {
 }
 
 // ================= ROUTES =================
+app.get('/admin', async (req, res) => {
+  if (!isAdmin(req)) {
+    return res.render('admin', { isAdmin: false, error: '' });
+  }
+  try {
+    const [storedSettings, subscriberCount] = await Promise.all([
+      SiteAdSettings.findOne({ key: 'site' }).lean(),
+      PushSubscription.countDocuments()
+    ]);
+    res.set('Cache-Control', 'no-store');
+    return res.render('admin', {
+      isAdmin: true,
+      settings: currentAdSettings(storedSettings),
+      subscriberCount
+    });
+  } catch (error) {
+    console.error('Unable to load admin controls:', error);
+    return res.status(500).send('Admin controls could not be loaded.');
+  }
+});
+
+app.post('/admin/login', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  if (!rateLimit(`admin-login:${ip}`, 60_000, 10)) {
+    return res.status(429).render('admin', {
+      isAdmin: false,
+      error: 'Too many login attempts. Please wait a minute.'
+    });
+  }
+
+  const username = typeof req.body.username === 'string' ? req.body.username.trim() : '';
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+  const configuredUsername = process.env.ADMIN_USERNAME || '';
+  const configuredPassword = process.env.ADMIN_PASSWORD || '';
+  const secret = process.env.ADMIN_SESSION_SECRET || '';
+
+  if (!configuredUsername || !configuredPassword || secret.length < 32) {
+    return res.status(503).render('admin', {
+      isAdmin: false,
+      error: 'Admin login is not configured. Set ADMIN_USERNAME, ADMIN_PASSWORD, and a 32-character ADMIN_SESSION_SECRET.'
+    });
+  }
+  if (!safeEqual(username, configuredUsername) || !safeEqual(password, configuredPassword)) {
+    return res.status(401).render('admin', {
+      isAdmin: false,
+      error: 'Username or password is incorrect.'
+    });
+  }
+
+  try {
+    setSessionCookie(res, createToken());
+    return res.redirect(303, '/admin');
+  } catch (error) {
+    console.error('Unable to create admin session:', error);
+    return res.status(503).render('admin', {
+      isAdmin: false,
+      error: 'Admin login is not configured. Check ADMIN_SESSION_SECRET.'
+    });
+  }
+});
+
+app.get('/admin/logout', (req, res) => {
+  clearSessionCookie(res);
+  res.redirect(303, '/admin');
+});
+
+app.get('/api/ads', async (req, res) => {
+  try {
+    const settings = await SiteAdSettings.findOne({ key: 'site' }).lean();
+    res.set('Cache-Control', 'no-store');
+    res.json(currentAdSettings(settings));
+  } catch (error) {
+    console.error('Unable to load ad settings:', error);
+    res.status(500).json({ error: 'Ad settings could not be loaded.' });
+  }
+});
+
+app.patch('/api/admin/ads', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { type, enabled } = req.body || {};
+  if (!['popunder', 'socialBar', 'videoRedirect'].includes(type) || typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'Invalid ad setting.' });
+  }
+  try {
+    const settings = await SiteAdSettings.findOneAndUpdate(
+      { key: 'site' },
+      { $set: { [type]: enabled } },
+      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
+    ).lean();
+    res.set('Cache-Control', 'no-store');
+    res.json(currentAdSettings(settings));
+  } catch (error) {
+    console.error('Unable to update ad settings:', error);
+    res.status(500).json({ error: 'Ad settings could not be saved.' });
+  }
+});
+
+app.get('/api/notifications/config', (req, res) => {
+  const keys = configuredVapidKeys();
+  res.set('Cache-Control', 'no-store');
+  res.json({ publicKey: keys ? keys.publicKey : null });
+});
+
+app.post('/api/notifications/subscribe', async (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  if (!rateLimit(`push-subscribe:${ip}`, 60_000, 10)) {
+    return res.status(429).json({ error: 'Too many subscription requests.' });
+  }
+  const body = req.body || {};
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : '';
+  let parsedEndpoint;
+  try {
+    parsedEndpoint = new URL(endpoint);
+  } catch {
+    parsedEndpoint = null;
+  }
+  if (
+    !parsedEndpoint ||
+    parsedEndpoint.protocol !== 'https:' ||
+    parsedEndpoint.username ||
+    parsedEndpoint.password ||
+    endpoint.length > 2048 ||
+    !validPushKey(body.keys && body.keys.p256dh, 65) ||
+    !validPushKey(body.keys && body.keys.auth, 16) ||
+    (body.expirationTime != null &&
+      (!Number.isFinite(body.expirationTime) || body.expirationTime <= 0))
+  ) {
+    return res.status(400).json({ error: 'Invalid push subscription.' });
+  }
+  try {
+    await PushSubscription.findOneAndUpdate(
+      { endpoint },
+      {
+        $set: {
+          keys: { p256dh: body.keys.p256dh, auth: body.keys.auth },
+          expirationTime: body.expirationTime ?? null
+        }
+      },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    if (error.code === 11000) return res.json({ ok: true });
+    console.error('Failed to save push subscription:', error);
+    res.status(500).json({ error: 'Subscription could not be saved.' });
+  }
+});
+
+app.post('/api/notifications/unsubscribe', async (req, res) => {
+  const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim() : '';
+  if (!endpoint || endpoint.length > 2048) {
+    return res.status(400).json({ error: 'Invalid subscription endpoint.' });
+  }
+  try {
+    await PushSubscription.deleteOne({ endpoint });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Failed to remove push subscription:', error);
+    res.status(500).json({ error: 'Subscription could not be removed.' });
+  }
+});
+
+app.get('/api/admin/notifications/movies', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const page = Number.parseInt(req.query.page, 10);
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+  if (!Number.isSafeInteger(page) || page < 1) {
+    return res.status(400).json({ error: 'Invalid page.' });
+  }
+
+  try {
+    const filter = query
+      ? { hadding: { $regex: query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } }
+      : {};
+    const pageSize = 40;
+    const movies = await Movie.find(filter)
+      .sort({ _id: -1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize + 1)
+      .select('id hadding img')
+      .lean();
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json({
+      items: movies.slice(0, pageSize).map((movie) => ({
+        routeName: String(movie.id || ''),
+        title: String(movie.hadding || ''),
+        imageLink: String(movie.img || ''),
+        description: String(movie.hadding || '')
+      })).filter((movie) => movie.routeName && movie.title),
+      page,
+      hasMore: movies.length > pageSize
+    });
+  } catch (error) {
+    console.error('Unable to load movie options for notifications:', error);
+    res.status(500).json({ error: 'Unable to load movies.' });
+  }
+});
+
+app.post('/api/admin/notifications/send', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  if (!rateLimit(`push-send:${ip}`, 60_000, 5)) {
+    return res.status(429).json({ error: 'Too many notification sends. Please wait.' });
+  }
+
+  const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : '';
+  const body = typeof req.body?.body === 'string' ? req.body.body.trim().slice(0, 200) : '';
+  const requestedPath = typeof req.body?.url === 'string' ? req.body.url.trim() : '/';
+  const requestedImage = typeof req.body?.imageUrl === 'string' ? req.body.imageUrl.trim() : '';
+  if (!title || !body) {
+    return res.status(400).json({ error: 'A notification title and message are required.' });
+  }
+  let redirectPath = requestedPath;
+  if (requestedPath.startsWith('/')) {
+    if (requestedPath.startsWith('//') || requestedPath.includes('\\')) {
+      return res.status(400).json({ error: 'Enter a link on this site, such as / or /movie/video-id.' });
+    }
+  } else {
+    try {
+      const redirectUrl = new URL(requestedPath);
+      if (
+        !['http:', 'https:'].includes(redirectUrl.protocol) ||
+        redirectUrl.username ||
+        redirectUrl.password ||
+        redirectUrl.hostname.toLowerCase() !== req.hostname.toLowerCase() ||
+        redirectUrl.pathname.startsWith('//') ||
+        redirectUrl.pathname.includes('\\')
+      ) {
+        return res.status(400).json({ error: 'Enter a link on this site, such as / or /movie/video-id.' });
+      }
+      redirectPath = `${redirectUrl.pathname}${redirectUrl.search}${redirectUrl.hash}`;
+    } catch {
+      return res.status(400).json({ error: 'Enter a valid link on this site.' });
+    }
+  }
+  let imageUrl = '';
+  if (requestedImage) {
+    if (requestedImage.length > 2048) {
+      return res.status(400).json({ error: 'Image URL is too long.' });
+    }
+    let image;
+    try {
+      image = new URL(requestedImage);
+    } catch {
+      return res.status(400).json({ error: 'Enter a valid HTTPS image URL.' });
+    }
+    if (
+      image.protocol !== 'https:' ||
+      image.username ||
+      image.password
+    ) {
+      return res.status(400).json({ error: 'Enter a valid HTTPS image URL.' });
+    }
+    imageUrl = image.href;
+  }
+
+  const keys = configuredVapidKeys();
+  if (!keys) {
+    return res.status(503).json({ error: 'Matching Web Push VAPID keys and contact email are not configured.' });
+  }
+
+  try {
+    webpush.setVapidDetails(`mailto:${keys.contactEmail}`, keys.publicKey, keys.privateKey);
+    const total = await PushSubscription.countDocuments();
+    const cursor = PushSubscription.find({}).select('endpoint keys').lean().cursor({ batchSize: 50 });
+    let sent = 0;
+    let failed = 0;
+    const expired = [];
+    let batch = [];
+
+    async function sendBatch(subscriptions) {
+      const results = await Promise.allSettled(subscriptions.map((subscription) =>
+        webpush.sendNotification(
+          { endpoint: subscription.endpoint, keys: subscription.keys },
+          JSON.stringify({
+            title,
+            body,
+            url: redirectPath,
+            ...(imageUrl ? { image: imageUrl, icon: imageUrl } : {})
+          }),
+          { TTL: 3600 }
+        )
+      ));
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          sent += 1;
+        } else {
+          failed += 1;
+          const statusCode = result.reason?.statusCode;
+          if (statusCode === 404 || statusCode === 410) {
+            expired.push(subscriptions[index].endpoint);
+          } else {
+            console.error('Push delivery failed:', statusCode || 'unknown');
+          }
+        }
+      });
+    }
+
+    for await (const subscription of cursor) {
+      batch.push(subscription);
+      if (batch.length === 10) {
+        await sendBatch(batch);
+        batch = [];
+      }
+    }
+    if (batch.length) await sendBatch(batch);
+    if (expired.length) await PushSubscription.deleteMany({ endpoint: { $in: expired } });
+
+    res.json({ ok: true, total, sent, failed });
+  } catch (error) {
+    console.error('Notification delivery failed:', error);
+    res.status(500).json({ error: 'Notification delivery failed.' });
+  }
+});
+
 app.get('/', async (req, res) => {
   try {
     const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
@@ -124,7 +523,10 @@ app.get('/', async (req, res) => {
 app.get('/movie/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    const data = await Movie.findOne({ id });
+    const [data, storedSettings] = await Promise.all([
+      Movie.findOne({ id }),
+      SiteAdSettings.findOne({ key: 'site' }).lean()
+    ]);
     if (!data) return res.status(404).send("Not found");
 
     const suggested = await Movie.find({ id: { $ne: id } })
@@ -147,6 +549,7 @@ app.get('/movie/:id', async (req, res) => {
       query: "",
       randomData,
       randomCount,
+      smartLink: currentAdSettings(storedSettings).videoRedirect ? res.locals.smartLink : '',
       smartLinkFlowCompleted: hasSmartLinkFlowCookie(req, id)
     });
   } catch (err) {
@@ -161,6 +564,8 @@ app.post('/api/movies/:id/smart-link', async (req, res) => {
     const movieExists = await Movie.exists({ id: videoId });
     if (!movieExists) return res.status(404).json({ error: "Video not found" });
 
+    const settings = await SiteAdSettings.findOne({ key: 'site' }).lean();
+    if (!currentAdSettings(settings).videoRedirect) return res.json({ redirectUrl: null });
     if (!res.locals.smartLink) return res.json({ redirectUrl: null });
 
     let redirectUrl;
@@ -437,4 +842,7 @@ ${urls}
 
 // ================= Start Server =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+}
+module.exports = app;

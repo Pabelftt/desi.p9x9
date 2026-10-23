@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= isAdmin ? "Admin controls" : "Admin login" %> - Desi P9X9</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", Tahoma, sans-serif; background: #0b0d14; color: #f4f4f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; padding: 32px 16px; background: radial-gradient(ellipse at top, #242138, #0b0d14 58%); }
+    main { width: min(100%, 760px); margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: clamp(1.5rem, 5vw, 2rem); }
+    h2 { margin: 0 0 8px; font-size: 1.1rem; }
+    p { color: #aeb0c2; line-height: 1.55; }
+    a, button { font: inherit; }
+    button { cursor: pointer; }
+    .panel { min-width: 0; margin: 16px 0; padding: 22px; border: 1px solid #303244; border-radius: 16px; background: rgba(22, 24, 35, .94); }
+    .field { display: grid; gap: 7px; margin: 14px 0; }
+    input, select, textarea { display: block; width: 100%; min-width: 0; max-width: 100%; padding: 11px 12px; border: 1px solid #3b3e50; border-radius: 9px; color: #fff; background: #10121b; }
+    textarea { min-height: 100px; resize: vertical; }
+    .primary, .logout { display: inline-flex; border: 0; border-radius: 9px; padding: 10px 16px; font-weight: 700; text-decoration: none; }
+    .primary { background: linear-gradient(135deg, #ff2d55, #c81959); color: #fff; }
+    .logout { background: #292b39; color: #eee; }
+    .ad-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-bottom: 1px solid #303244; }
+    .ad-row:last-child { border-bottom: 0; }
+    .ad-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+    .ad-controls label { display: inline-flex; align-items: center; gap: 6px; }
+    .ad-controls input { width: auto; accent-color: #ff2d55; }
+    .status { min-width: 44px; color: #70e09b; font-size: .85rem; font-weight: 700; }
+    .status.off { color: #aeb0c2; }
+    .result { min-height: 1.5em; color: #70e09b; }
+    .result.error { color: #ff8787; }
+    .count { color: #ff8aa1; font-weight: 800; }
+    .notification-panel { padding: clamp(20px, 4vw, 32px); border-radius: 17px; }
+    .notification-intro { display: flex; align-items: center; gap: 16px; margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px solid #303244; }
+    .notification-intro h2 { margin: 0; color: #f4f4f8; font-size: 1.12rem; font-weight: 800; }
+    .notification-intro p { margin: 5px 0 0; font-size: .88rem; }
+    .notification-icon { width: 50px; height: 50px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255,45,85,.25); border-radius: 15px; color: #ff718a; background: rgba(255,45,85,.1); font-size: 1.25rem; }
+    .notification-form { display: grid; min-width: 0; gap: 22px; }
+    .notification-form .field { min-width: 0; gap: 9px; margin: 0; color: #f4f4f8; font-size: .9rem; font-weight: 650; }
+    .notification-form .field-label { display: flex; align-items: center; gap: 9px; }
+    .notification-form .field-label i { color: #ff718a; }
+    .notification-form input, .notification-form select, .notification-form textarea { min-height: 46px; padding: 11px 13px; border-color: #303244; border-radius: 11px; background: #10111a; font: inherit; font-size: .94rem; }
+    .notification-form textarea { min-height: 120px; line-height: 1.55; }
+    .notification-form select { color: #f4f4f8; }
+    .notification-form input:focus, .notification-form select:focus, .notification-form textarea:focus { outline: none; border-color: rgba(255,45,85,.65); box-shadow: 0 0 0 3px rgba(255,45,85,.12); }
+    .notification-help { color: #aeb0c2; font-size: .78rem; font-weight: 400; line-height: 1.5; }
+    .video-picker { display: grid; gap: 9px; }
+    .video-picker-actions { display: flex; gap: 9px; }
+    .video-picker-actions input { flex: 1; min-width: 0; }
+    .secondary { border: 1px solid #3b3e50; border-radius: 10px; padding: 0 13px; background: #202230; color: #f4f4f8; font-weight: 650; }
+    .secondary:disabled { opacity: .6; cursor: wait; }
+    .notification-form .primary { justify-self: start; min-height: 46px; padding: 11px 19px; border-radius: 12px; background: linear-gradient(115deg, #ff2d55, #ff7018); box-shadow: 0 8px 22px rgba(255,45,85,.2); }
+    .notification-result { margin: 0; }
+    @media (max-width: 560px) {
+      body { padding: 20px 12px; }
+      .panel { padding: 16px; }
+      .notification-panel { padding: 16px; }
+      .notification-form { gap: 18px; }
+      .video-picker-actions { flex-direction: column; }
+      .secondary { min-height: 42px; }
+      .notification-form .primary { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><%= isAdmin ? "Admin controls" : "Desi P9X9 Admin" %></h1>
+    <% if (isAdmin) { %><a class="logout" href="/admin/logout">Log out</a><% } %>
+  </header>
+
+  <% if (!isAdmin) { %>
+    <section class="panel">
+      <h2>Sign in</h2>
+      <p>Sign in to manage ad placements and browser notifications.</p>
+      <form method="post" action="/admin/login">
+        <label class="field">Username<input name="username" autocomplete="username" required></label>
+        <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary" type="submit">Sign in</button>
+      </form>
+      <% if (error) { %><p class="result error"><%= error %></p><% } %>
+    </section>
+  <% } else { %>
+    <section class="panel">
+      <h2>Ad placements</h2>
+      <p>Choose which ads load on public pages. Admin pages never load ads.</p>
+      <% [
+        ["popunder", "Popunder"],
+        ["socialBar", "Social Bar"],
+        ["videoRedirect", "Video Redirect URL"]
+      ].forEach(function(ad) { %>
+        <div class="ad-row">
+          <strong><%= ad[1] %></strong>
+          <div class="ad-controls">
+            <label><input type="radio" name="<%= ad[0] %>" value="true" <%= settings[ad[0]] ? "checked" : "" %>> On</label>
+            <label><input type="radio" name="<%= ad[0] %>" value="false" <%= settings[ad[0]] ? "" : "checked" %>> Off</label>
+            <span class="status <%= settings[ad[0]] ? "" : "off" %>" data-status="<%= ad[0] %>"><%= settings[ad[0]] ? "On" : "Off" %></span>
+          </div>
+        </div>
+      <% }); %>
+      <p class="result" id="adResult" role="status"></p>
+    </section>
+
+    <section class="panel notification-panel">
+      <div class="notification-intro">
+        <span class="notification-icon"><i class="fa-regular fa-bell" aria-hidden="true"></i></span>
+        <div>
+          <h2>Compose a notification</h2>
+          <p>Keep it short and send only what subscribers need to know.</p>
+        </div>
+      </div>
+      <p><span class="count"><%= subscriberCount %></span> subscribed browser(s) are saved in MongoDB.</p>
+      <form class="notification-form" id="notificationForm">
+        <div class="field">
+          <label class="field-label" for="movieSearch"><i class="fa-solid fa-film" aria-hidden="true"></i> Choose a video</label>
+          <div class="video-picker">
+            <div class="video-picker-actions">
+              <input id="movieSearch" type="search" placeholder="Search your videos">
+              <button class="secondary" id="loadMovies" type="button" hidden>Load more</button>
+            </div>
+            <select id="movieSelect" aria-label="Select a video">
+              <option value="">Loading videos...</option>
+            </select>
+          </div>
+          <small class="notification-help">Select a video to fill in its title, image, description, and page link.</small>
+        </div>
+        <label class="field" for="notificationTitle">
+          <span class="field-label"><i class="fa-solid fa-heading" aria-hidden="true"></i> Notification title</span>
+          <input id="notificationTitle" name="title" maxlength="80" placeholder="e.g. New videos are available" required>
+          <small class="notification-help">Up to 80 characters.</small>
+        </label>
+        <label class="field" for="notificationImage">
+          <span class="field-label"><i class="fa-regular fa-image" aria-hidden="true"></i> Image URL</span>
+          <input id="notificationImage" name="imageUrl" type="url" maxlength="2048" placeholder="https://example.com/notification-image.jpg">
+          <small class="notification-help">Optional. HTTPS image shown in supported browser notifications.</small>
+        </label>
+        <label class="field" for="notificationBody">
+          <span class="field-label"><i class="fa-solid fa-wave-square" aria-hidden="true"></i> Message</span>
+          <textarea id="notificationBody" name="body" maxlength="200" placeholder="Write a clear message for your subscribers." required></textarea>
+          <small class="notification-help">Up to 200 characters.</small>
+        </label>
+        <label class="field" for="notificationUrl">
+          <span class="field-label"><i class="fa-solid fa-globe" aria-hidden="true"></i> Redirect link</span>
+          <input id="notificationUrl" name="url" type="text" value="/" maxlength="2048" placeholder="https://desi.p9x9.com/movie/video-id">
+          <small class="notification-help">Select a video above or enter a full URL or site path.</small>
+        </label>
+        <button class="primary" type="submit"><i class="fa-regular fa-paper-plane" aria-hidden="true"></i> Send to opted-in subscribers</button>
+      </form>
+      <p class="result notification-result" id="notificationResult" role="status"></p>
+    </section>
+    <script>
+      document.querySelectorAll('.ad-controls input').forEach(function(input) {
+        input.addEventListener('change', async function() {
+          var row = input.closest('.ad-row');
+          var type = input.name;
+          var result = document.getElementById('adResult');
+          result.textContent = 'Saving...';
+          result.classList.remove('error');
+          row.querySelectorAll('input').forEach(function(radio) { radio.disabled = true; });
+          try {
+            var response = await fetch('/api/admin/ads', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: type, enabled: input.value === 'true' })
+            });
+            var data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Could not save ad setting.');
+            var enabled = data[type];
+            row.querySelector('[data-status]').textContent = enabled ? 'On' : 'Off';
+            row.querySelector('[data-status]').classList.toggle('off', !enabled);
+            result.textContent = 'Ad setting saved.';
+          } catch (error) {
+            result.textContent = error.message;
+            result.classList.add('error');
+          } finally {
+            row.querySelectorAll('input').forEach(function(radio) { radio.disabled = false; });
+          }
+        });
+      });
+
+      var movieSelect = document.getElementById('movieSelect');
+      var movieSearch = document.getElementById('movieSearch');
+      var loadMovies = document.getElementById('loadMovies');
+      var moviePage = 0;
+      var movieHasMore = false;
+      var movieLoading = false;
+      var movieSearchTimer;
+      var movieRequest;
+
+      async function fetchMovies(reset) {
+        if (reset && movieRequest) {
+          movieRequest.abort();
+          movieLoading = false;
+        }
+        if (movieLoading) return;
+        movieLoading = true;
+        loadMovies.disabled = true;
+        if (reset) {
+          movieRequest = new AbortController();
+          movieSelect.innerHTML = '<option value="">Loading videos...</option>';
+          moviePage = 0;
+        }
+        var currentRequest = movieRequest;
+        try {
+          var nextPage = reset ? 1 : moviePage + 1;
+          var params = new URLSearchParams({ page: String(nextPage), q: movieSearch.value });
+          var response = await fetch('/api/admin/notifications/movies?' + params.toString(), {
+            cache: 'no-store',
+            signal: currentRequest ? currentRequest.signal : undefined
+          });
+          var data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Unable to load videos.');
+          if (currentRequest && currentRequest.signal.aborted) return;
+          if (reset) movieSelect.innerHTML = '<option value="">Select a video</option>';
+          data.items.forEach(function(movie) {
+            var option = document.createElement('option');
+            option.value = movie.routeName;
+            option.textContent = movie.title;
+            option.dataset.title = movie.title;
+            option.dataset.image = movie.imageLink;
+            option.dataset.description = movie.description;
+            movieSelect.appendChild(option);
+          });
+          moviePage = data.page;
+          movieHasMore = data.hasMore;
+          loadMovies.hidden = !movieHasMore;
+          if (!data.items.length && reset) {
+            movieSelect.innerHTML = '<option value="">No videos found</option>';
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError' && !(currentRequest && currentRequest.signal.aborted)) {
+            movieSelect.innerHTML = '<option value="">Could not load videos</option>';
+            document.getElementById('notificationResult').textContent = error.message;
+            document.getElementById('notificationResult').classList.add('error');
+          }
+        } finally {
+          if (movieRequest === currentRequest) {
+            movieLoading = false;
+            loadMovies.disabled = false;
+          }
+        }
+      }
+
+      movieSearch.addEventListener('input', function() {
+        window.clearTimeout(movieSearchTimer);
+        movieSearchTimer = window.setTimeout(function() { fetchMovies(true); }, 250);
+      });
+      loadMovies.addEventListener('click', function() {
+        if (movieHasMore) fetchMovies(false);
+      });
+      movieSelect.addEventListener('change', function() {
+        var option = movieSelect.selectedOptions[0];
+        if (!option || !option.value) return;
+        document.getElementById('notificationTitle').value = (option.dataset.title || '').slice(0, 80);
+        document.getElementById('notificationImage').value = option.dataset.image || '';
+        document.getElementById('notificationBody').value = (option.dataset.description || '').slice(0, 200);
+        document.getElementById('notificationUrl').value =
+          new URL('/movie/' + encodeURIComponent(option.value), window.location.origin).href;
+      });
+      fetchMovies(true);
+
+      document.getElementById('notificationForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        var form = event.currentTarget;
+        var result = document.getElementById('notificationResult');
+        var button = form.querySelector('button[type=submit]');
+        button.disabled = true;
+        result.textContent = 'Sending...';
+        result.classList.remove('error');
+        try {
+          var fields = new FormData(form);
+          var response = await fetch('/api/admin/notifications/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: fields.get('title'),
+              imageUrl: fields.get('imageUrl'),
+              body: fields.get('body'),
+              url: fields.get('url')
+            })
+          });
+          var data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Notification send failed.');
+          result.textContent = 'Accepted: ' + data.sent + ' / ' + data.total + '. Failed: ' + data.failed + '.';
+          if (data.total > 0) {
+            form.reset();
+            document.getElementById('notificationUrl').value = '/';
+            movieSelect.value = '';
+          }
+        } catch (error) {
+          result.textContent = error.message;
+          result.classList.add('error');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    </script>
+  <% } %>
+</main>
+</body>
+</html>
