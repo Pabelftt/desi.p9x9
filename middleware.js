@@ -10,6 +10,7 @@ module.exports = function(req, res, next) {
   res.locals.moreWebsite = "https://p9x9.com";
   res.locals.telegramLink = (process.env.TELEGRAM_URL || "https://telegram.p9x9.com/telegram").trim();
   res.locals.downloadLink = (process.env.DOWNLOAD_LINK_URL || "https://auctionr.org/4/93a942816b667574bfb9c03daa56b8c0").trim();
+  res.locals.socialBarScriptUrl = (process.env.SOCIAL_BAR_SCRIPT_URL || "").trim();
   res.locals.keywords = "Bangla Sex Video, Bangladeshi Sex Video, Viral Link, Tiktoker Viral Link, Bhabi Sex, Vabi Sex";
   res.locals.smartLink = (process.env.SMART_LINK_URL || "").trim();
 
